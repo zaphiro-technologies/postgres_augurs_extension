@@ -1,0 +1,36 @@
+schema: spec-driven
+
+context: |
+      We use dockerised environments and github actions.
+      Domain: energy grid monitoring platform.
+
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Proposal should build on existing changes
+    - State the expected automated test coverage, benchmark impact, and documentation updates; if one is not applicable, explain why
+    - State the security impact and required security checks; if security impact is not applicable, explain why
+  design:
+    - Define the test strategy and reproducible benchmark method for behavior or performance changes
+    - Identify the documentation that must be updated and keep usage and compatibility guidance explicit
+    - Define relevant trust boundaries, input or data handling risks, and security validation for security-sensitive changes
+  tasks:
+    - Include automated tests for every implementation behavior change, with a verification command or observable result
+    - Include a reproducible benchmark task for performance-sensitive, algorithmic, SQL, or data-path changes; otherwise record why a benchmark is not applicable
+    - Include a documentation task for user-facing, SQL/API, configuration, or operational changes; otherwise record why documentation is not applicable
+    - Include security tests or security-scan tasks for changes affecting inputs, outputs, authentication, authorization, secrets, dependencies, configuration, CI, or data handling; otherwise record why security validation is not applicable
+
+operations:
+  apply:
+    guidance:
+      - Keep test summaries concise
+      - Run linters before marking a task complete
+      - Run the relevant automated tests and record the command and result before marking implementation tasks complete
+      - Run affected benchmarks and record the comparison or explain the approved non-applicability before marking performance-sensitive tasks complete
+      - Update the relevant documentation and verify examples, signatures, and configuration names match the implementation
+      - Run applicable security checks, such as secret scanning, static analysis, dependency or container scanning, and security tests; record each command and result before marking security-sensitive tasks complete
+  archive:
+    guidance:
+      - Summarize the archive outcome before finishing
+      - Confirm tests, benchmarks, and documentation are complete, or explicitly record why each excluded item is not applicable
+      - Confirm required security checks are complete and findings are resolved or explicitly documented as accepted, deferred, or not applicable
