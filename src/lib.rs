@@ -19,6 +19,7 @@ use std::{
 
 const MAX_CACHED_FITS: usize = 4;
 const MIN_CHANGEPOINT_VALUES: usize = 4;
+const MAD_SCALE: f64 = 1.4826;
 
 type FittedMstlModel = augurs::mstl::FittedMSTLModel;
 
@@ -187,6 +188,171 @@ fn validate_changepoint_inputs(values: &[Option<f64>]) -> Result<Vec<f64>, Strin
             Ok(value)
         })
         .collect()
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RollingMadConfig {
+    window_size: usize,
+    threshold: f64,
+    min_samples: usize,
+}
+
+type RollingMadRow = (
+    i32,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<bool>,
+    bool,
+);
+
+fn validate_rolling_mad_inputs(
+    values: &[Option<f64>],
+    window_size: i32,
+    threshold: f64,
+    min_samples: Option<i32>,
+) -> Result<(Vec<f64>, RollingMadConfig), String> {
+    if values.is_empty() {
+        return Err("values must contain at least one observation".to_owned());
+    }
+
+    if window_size <= 0 {
+        return Err("window_size must be positive".to_owned());
+    }
+
+    if !threshold.is_finite() || threshold <= 0.0 {
+        return Err("threshold must be finite and positive".to_owned());
+    }
+
+    let window_size = window_size as usize;
+    let min_samples = min_samples.unwrap_or(window_size as i32);
+    if min_samples <= 0 {
+        return Err("min_samples must be positive".to_owned());
+    }
+    if min_samples as usize > window_size {
+        return Err("min_samples must not be greater than window_size".to_owned());
+    }
+
+    let values = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let value =
+                value.ok_or_else(|| format!("values must not contain NULL at index {index}"))?;
+            if !value.is_finite() {
+                return Err(format!(
+                    "values must contain only finite numbers (invalid at index {index})"
+                ));
+            }
+            Ok(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok((
+        values,
+        RollingMadConfig {
+            window_size,
+            threshold,
+            min_samples: min_samples as usize,
+        },
+    ))
+}
+
+fn conventional_median(sorted_values: &[f64]) -> f64 {
+    let middle = sorted_values.len() / 2;
+    if sorted_values.len() % 2 == 1 {
+        sorted_values[middle]
+    } else {
+        sorted_values[middle - 1] * 0.5 + sorted_values[middle] * 0.5
+    }
+}
+
+fn finite_result(value: f64, description: &str) -> Result<f64, String> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(format!("rolling MAD {description} is not finite"))
+    }
+}
+
+fn rolling_mad_rows(
+    values: &[f64],
+    config: RollingMadConfig,
+) -> Result<Vec<RollingMadRow>, String> {
+    let mut rows = Vec::with_capacity(values.len());
+
+    for (index, value) in values.iter().copied().enumerate() {
+        let start = index.saturating_sub(config.window_size);
+        let baseline = &values[start..index];
+        let is_ready = baseline.len() >= config.min_samples;
+
+        if !is_ready {
+            rows.push((index as i32, None, None, None, None, None, None, false));
+            continue;
+        }
+
+        let mut sorted_baseline = baseline.to_vec();
+        sorted_baseline.sort_by(f64::total_cmp);
+        let median = finite_result(conventional_median(&sorted_baseline), "median")?;
+
+        let mut deviations = sorted_baseline
+            .iter()
+            .map(|baseline_value| {
+                finite_result((*baseline_value - median).abs(), "absolute deviation")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        deviations.sort_by(f64::total_cmp);
+        let mad = finite_result(conventional_median(&deviations), "MAD")?;
+
+        if mad == 0.0 {
+            if value == median {
+                rows.push((
+                    index as i32,
+                    Some(median),
+                    Some(0.0),
+                    Some(median),
+                    Some(median),
+                    Some(0.0),
+                    Some(false),
+                    true,
+                ));
+            } else {
+                rows.push((
+                    index as i32,
+                    Some(median),
+                    Some(0.0),
+                    Some(median),
+                    Some(median),
+                    None,
+                    Some(true),
+                    true,
+                ));
+            }
+            continue;
+        }
+
+        let scaled_mad = finite_result(MAD_SCALE * mad, "scaled MAD")?;
+        let margin = finite_result(config.threshold * scaled_mad, "threshold margin")?;
+        let lower_bound = finite_result(median - margin, "lower bound")?;
+        let upper_bound = finite_result(median + margin, "upper bound")?;
+        let score = finite_result((value - median).abs() / scaled_mad, "score")?;
+        let is_outlier = score > config.threshold;
+
+        rows.push((
+            index as i32,
+            Some(median),
+            Some(mad),
+            Some(lower_bound),
+            Some(upper_bound),
+            Some(score),
+            Some(is_outlier),
+            true,
+        ));
+    }
+
+    Ok(rows)
 }
 
 fn detect_changepoints(values: &[f64]) -> Result<Vec<i32>, String> {
@@ -446,6 +612,35 @@ fn augurs_detect_changepoints(
 }
 
 #[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ts_mad_detect(
+    values: Vec<Option<f64>>,
+    window_size: i32,
+    threshold: default!(f64, "3.5"),
+    min_samples: default!(Option<i32>, "NULL"),
+) -> TableIterator<
+    'static,
+    (
+        name!(index, i32),
+        name!(median, Option<f64>),
+        name!(mad, Option<f64>),
+        name!(lower_bound, Option<f64>),
+        name!(upper_bound, Option<f64>),
+        name!(score, Option<f64>),
+        name!(is_outlier, Option<bool>),
+        name!(is_ready, bool),
+    ),
+> {
+    let (values, config) =
+        validate_rolling_mad_inputs(&values, window_size, threshold, min_samples)
+            .unwrap_or_else(|error| pgrx::error!("invalid ts_mad_detect input: {error}"));
+    let rows = rolling_mad_rows(&values, config)
+        .unwrap_or_else(|error| pgrx::error!("ts_mad_detect calculation failed: {error}"));
+
+    TableIterator::new(rows)
+}
+
+#[pg_extern]
 fn augurs_mstl_decompose(
     values: Vec<Option<f64>>,
     periods: Vec<Option<i32>>,
@@ -577,8 +772,9 @@ fn augurs_mstl_benchmark(
 #[cfg(test)]
 mod tests {
     use super::{
-        decompose_rows, detect_changepoints, validate_changepoint_inputs,
-        validate_decomposition_inputs, validate_inputs, validate_seasonality_inputs, FitKey,
+        conventional_median, decompose_rows, detect_changepoints, rolling_mad_rows,
+        validate_changepoint_inputs, validate_decomposition_inputs, validate_inputs,
+        validate_rolling_mad_inputs, validate_seasonality_inputs, FitKey,
     };
 
     #[test]
@@ -688,5 +884,99 @@ mod tests {
         assert_eq!(first, same);
         assert_ne!(first, changed_value);
         assert_ne!(first, changed_period);
+    }
+
+    #[test]
+    fn rolling_mad_validation_applies_defaults_and_rejects_invalid_inputs() {
+        let (values, config) = validate_rolling_mad_inputs(&[Some(1.0), Some(2.0)], 2, 3.5, None)
+            .expect("representative rolling MAD input should be valid");
+        assert_eq!(values, vec![1.0, 2.0]);
+        assert_eq!(config.window_size, 2);
+        assert_eq!(config.threshold, 3.5);
+        assert_eq!(config.min_samples, 2);
+
+        assert!(validate_rolling_mad_inputs(&[], 2, 3.5, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(1.0)], 0, 3.5, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(1.0)], 2, 0.0, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(1.0)], 2, f64::NAN, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[None], 2, 3.5, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(f64::INFINITY)], 2, 3.5, None).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(1.0)], 2, 3.5, Some(0)).is_err());
+        assert!(validate_rolling_mad_inputs(&[Some(1.0)], 2, 3.5, Some(3)).is_err());
+    }
+
+    #[test]
+    fn rolling_mad_uses_conventional_even_median() {
+        assert_eq!(conventional_median(&[1.0, 2.0, 3.0, 4.0]), 2.5);
+        assert_eq!(conventional_median(&[1.0, 2.0, 3.0]), 2.0);
+    }
+
+    #[test]
+    fn rolling_mad_excludes_current_value_and_detects_spikes() {
+        let (_, config) = validate_rolling_mad_inputs(&[Some(1.0); 5], 4, 3.5, None)
+            .expect("configuration should be valid");
+        let values = [1.0, 2.0, 3.0, 4.0, 100.0];
+        let rows = rolling_mad_rows(&values, config).expect("calculation should succeed");
+
+        assert!(rows[..4].iter().all(|row| !row.7));
+        let row = rows[4];
+        assert_eq!(row.0, 4);
+        assert_eq!(row.1, Some(2.5));
+        assert_eq!(row.2, Some(1.0));
+        assert_eq!(row.6, Some(true));
+        assert!(row.5.expect("spike should have a score") > 3.5);
+    }
+
+    #[test]
+    fn rolling_mad_warmup_and_level_shift_are_trailing() {
+        let (_, config) = validate_rolling_mad_inputs(&[Some(1.0); 4], 4, 3.5, Some(2))
+            .expect("configuration should be valid");
+        let rows = rolling_mad_rows(&[1.0, 2.0, 3.0, 4.0, 10.0, 10.0], config)
+            .expect("calculation should succeed");
+
+        assert!(!rows[0].7);
+        assert_eq!(rows[0].6, None);
+        assert!(!rows[1].7);
+        assert!(rows[2].7);
+        assert_eq!(rows[2].1, Some(1.5));
+        assert_eq!(rows[4].1, Some(2.5));
+        assert_eq!(rows[5].1, Some(3.5));
+    }
+
+    #[test]
+    fn rolling_mad_zero_mad_handles_matching_and_different_values() {
+        let (_, config) = validate_rolling_mad_inputs(&[Some(1.0); 3], 3, 3.5, None)
+            .expect("configuration should be valid");
+        let matching = rolling_mad_rows(&[1.0, 1.0, 1.0, 1.0], config)
+            .expect("matching zero-MAD input should succeed");
+        assert_eq!(matching[3].1, Some(1.0));
+        assert_eq!(matching[3].2, Some(0.0));
+        assert_eq!(matching[3].5, Some(0.0));
+        assert_eq!(matching[3].6, Some(false));
+
+        let different = rolling_mad_rows(&[1.0, 1.0, 1.0, 2.0], config)
+            .expect("different zero-MAD input should succeed");
+        assert_eq!(different[3].1, Some(1.0));
+        assert_eq!(different[3].2, Some(0.0));
+        assert_eq!(different[3].5, None);
+        assert_eq!(different[3].6, Some(true));
+    }
+
+    #[test]
+    fn rolling_mad_outputs_are_finite_or_null() {
+        let (_, config) = validate_rolling_mad_inputs(
+            &[Some(-2.0), Some(0.0), Some(3.0), Some(8.0)],
+            3,
+            3.5,
+            Some(1),
+        )
+        .expect("configuration should be valid");
+        let rows =
+            rolling_mad_rows(&[-2.0, 0.0, 3.0, 8.0], config).expect("calculation should succeed");
+        for row in rows {
+            for value in [row.1, row.2, row.3, row.4, row.5].into_iter().flatten() {
+                assert!(value.is_finite());
+            }
+        }
     }
 }

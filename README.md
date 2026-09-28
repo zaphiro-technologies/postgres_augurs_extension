@@ -6,7 +6,7 @@ ordered `float8[]` histories and returns forecast or analysis rows; it does not
 query application tables or persist results.
 
 The current implementation is pinned to Augurs `0.10.2`.
-This extension currently enables Augurs' `ets`, `mstl`, `seasons`, and
+This extension currently enables Augurs' `ets`, `mstl`, `seasons`, `outliers` and
 `changepoint` capabilities.
 
 ## Why put time-series analytics in PostgreSQL?
@@ -161,6 +161,79 @@ ORDER BY changes.index;
 
 The function rejects empty histories, histories shorter than four samples,
 NULL elements, and non-finite values without returning partial output.
+
+### `ts_mad_detect`
+
+Augurs `0.10.2` also contains a native `MADDetector` in its outlier package.
+That detector computes one global, asymmetric band for an aligned series; it
+does not provide a preceding rolling window, SQL `min_samples` warm-up, or the
+zero-MAD row contract below. `ts_mad_detect` therefore keeps the exact rolling
+adapter semantics local while reusing the pinned Augurs outlier capability as
+the evaluated algorithm reference.
+
+#### Summary
+
+```sql
+ts_mad_detect(
+    values       float8[],
+    window_size  integer,
+    threshold    double precision DEFAULT 3.5,
+    min_samples  integer DEFAULT NULL
+)
+RETURNS TABLE (
+    index       integer,
+    median      double precision,
+    mad         double precision,
+    lower_bound double precision,
+    upper_bound double precision,
+    score       double precision,
+    is_outlier  boolean,
+    is_ready    boolean
+)
+```
+
+Returns exactly one zero-based row for each input array position. For position
+`i`, the baseline is the preceding `window_size` samples, ending at `i - 1`;
+the current value is never included. The baseline median and median absolute
+deviation use conventional midpoint medians for even sample counts. Bounds
+use the robust scale factor `1.4826`, and `is_outlier` is true only when the
+score is strictly greater than `threshold`.
+
+`min_samples` defaults to `window_size` and must be between `1` and
+`window_size`. Before that many preceding samples are available, the row has
+`is_ready = false` and NULL statistical fields and outlier flag. A matching
+zero-MAD value has a zero score and `is_outlier = false`; a different value
+has NULL score and `is_outlier = true`, with both bounds equal to the median.
+
+The input must be a non-empty, finite, NULL-free, already ordered history.
+The function does not query timestamps, resample, interpolate, reorder, persist
+state, generate events, detect seasonality or changepoints, compare peers, or
+implement Grafana-specific behavior. Map `index` back to timestamps in the
+calling query:
+
+```sql
+WITH series AS (
+    SELECT
+        row_number() OVER (ORDER BY bucket)::integer - 1 AS index,
+        bucket,
+        avg_value AS value
+    FROM transformer_loading_15m
+    WHERE transformer_id = $1
+), detected AS (
+    SELECT *
+    FROM ts_mad_detect(
+        ARRAY(SELECT value FROM series ORDER BY index),
+        96
+    )
+)
+SELECT s.bucket, s.value, d.median, d.score, d.is_outlier, d.is_ready
+FROM series AS s
+JOIN detected AS d USING (index)
+ORDER BY s.bucket;
+```
+
+The same function can consume an MSTL `remainder` array when the caller wants
+to score deviations after removing the modeled trend and seasonal components.
 
 ### `augurs_mstl_decompose`
 
@@ -511,42 +584,20 @@ For a behavior or API change:
    complete. Archived changes provide the history for subsequent proposals;
    they are not a substitute for current implementation or benchmark checks.
 
-The active rolling-MAD proposal is an example of this workflow. It deliberately
-specifies a future stateless SQL API, while persistence, online state, and
-operational event policy remain outside that change.
-
 ## Future evolution
 
-The current extension is intentionally small. Possible next steps should be
-proposed and measured independently rather than silently expanding the SQL
-boundary:
+The current extension is intentionally small. Possible next steps include:
 
 - **More Augurs capabilities.** Evaluate Augurs outlier detection, clustering,
   dynamic time warping, Prophet-compatible forecasting, and additional
   diagnostics where the pinned release and PostgreSQL row/array model provide
   a useful contract. Each addition should include a clear mapping from native
   semantics to SQL semantics, validation, and a cost benchmark.
-- **Online analytics.** Add explicitly stateful APIs for append/update,
-  out-of-order samples, late-data correction, checkpointing, concurrency, and
-  restart recovery. This requires a decision about who owns state—the database,
-  a SynchroGuard service, or a dedicated model store—before implementation.
 - **Automatic model lifecycle management.** Introduce versioned model metadata,
   fit/retrain policies, freshness and drift checks, invalidation, retention,
   rollback, and resource limits. The lifecycle should be policy-driven and
   observable; a process-local cache such as `augurs_mstl_fit` is not durable
   lifecycle management.
-- **Operational result integration.** Add optional, explicitly designed paths
-  for anomaly/event persistence, alert deduplication, auditability, and
-  dashboard-friendly result views. These should define ownership and retention
-  before adding tables or background jobs.
-- **Evaluation and guardrails.** Add accuracy and detection-quality evaluation,
-  maximum input/resource budgets, cancellation behavior, and metrics that
-  separate numerical work from SQL and client overhead.
-
-The likely progression is: expand stateless functions where the contract is
-clear, then evaluate online state and lifecycle management with a separate
-OpenSpec change once SynchroGuard ownership and operational requirements are
-defined.
 
 ## Quick start
 

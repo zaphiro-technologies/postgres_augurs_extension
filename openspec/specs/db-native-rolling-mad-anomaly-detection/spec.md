@@ -4,7 +4,7 @@ Provide a stateless PostgreSQL primitive that evaluates each ordered numeric
 observation against a trailing, robust median/MAD baseline without timestamp,
 domain, persistence, or event-generation concerns.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: The capability SHALL expose an aligned rolling MAD table function
 
@@ -70,9 +70,8 @@ For a ready row with non-zero MAD, bounds SHALL be `median +/- threshold *
 above the upper bound. When MAD is zero and the current value equals the
 median, the function SHALL return equal median bounds, score `0`, and
 `is_outlier = false`. When MAD is zero and the current value differs from the
-median, it SHALL return equal median bounds, a NULL score, and
-`is_outlier = true`. The function SHALL never return NaN or infinite numeric
-results.
+median, it SHALL return equal median bounds, a NULL score, and `is_outlier =
+true`. The function SHALL never return NaN or infinite numeric results.
 
 #### Scenario: A constant window receives the matching value
 - **WHEN** a ready row has MAD zero and the current value equals the baseline median

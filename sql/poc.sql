@@ -630,3 +630,267 @@ BEGIN
     END;
 END
 $$;
+
+CREATE TEMP TABLE mad_spike AS
+SELECT *
+FROM ts_mad_detect(ARRAY[1.0, 2.0, 3.0, 4.0, 100.0]::float8[], 4);
+
+DO $$
+DECLARE
+    output_rows bigint;
+    first_index integer;
+    last_index integer;
+    spike_median double precision;
+    spike_mad double precision;
+    spike_score double precision;
+    spike_outlier boolean;
+BEGIN
+    SELECT count(*), min(index), max(index)
+    INTO output_rows, first_index, last_index
+    FROM mad_spike;
+
+    IF output_rows <> 5 OR first_index <> 0 OR last_index <> 4 THEN
+        RAISE EXCEPTION 'unexpected rolling MAD shape: rows %, indexes %..%',
+            output_rows, first_index, last_index;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM mad_spike
+        WHERE index < 4
+          AND (is_ready OR median IS NOT NULL OR mad IS NOT NULL
+               OR score IS NOT NULL OR is_outlier IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'rolling MAD warm-up rows were not NULL/false as specified';
+    END IF;
+
+    SELECT median, mad, score, is_outlier
+    INTO spike_median, spike_mad, spike_score, spike_outlier
+    FROM mad_spike
+    WHERE index = 4;
+
+    IF spike_median <> 2.5 OR spike_mad <> 1.0
+        OR spike_score <= 3.5 OR NOT spike_outlier
+        OR (SELECT is_ready FROM mad_spike WHERE index = 4) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION 'unexpected rolling MAD spike row: median %, mad %, score %, outlier %',
+            spike_median, spike_mad, spike_score, spike_outlier;
+    END IF;
+END
+$$;
+
+CREATE TEMP TABLE mad_level_shift AS
+SELECT *
+FROM ts_mad_detect(
+    ARRAY[1.0, 1.0, 1.0, 1.0, 10.0, 10.0]::float8[],
+    4,
+    3.5,
+    2
+);
+
+DO $$
+BEGIN
+    IF (SELECT is_outlier FROM mad_level_shift WHERE index = 4) IS DISTINCT FROM true
+        OR (SELECT is_outlier FROM mad_level_shift WHERE index = 5) IS DISTINCT FROM true
+        OR (SELECT median FROM mad_level_shift WHERE index = 5) <> 1.0 THEN
+        RAISE EXCEPTION 'sustained level shift did not use the preceding window';
+    END IF;
+END
+$$;
+
+CREATE TEMP TABLE mad_default_threshold AS
+SELECT *
+FROM ts_mad_detect(ARRAY[1.0, 2.0, 3.0, 100.0]::float8[], 3);
+
+CREATE TEMP TABLE mad_explicit_defaults AS
+SELECT *
+FROM ts_mad_detect(ARRAY[1.0, 2.0, 3.0, 100.0]::float8[], 3, 3.5, NULL);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM mad_default_threshold AS defaults
+        FULL JOIN mad_explicit_defaults AS explicit USING (index)
+        WHERE defaults IS DISTINCT FROM explicit
+    ) THEN
+        RAISE EXCEPTION 'default threshold/min_samples differs from explicit defaults';
+    END IF;
+END
+$$;
+
+CREATE TEMP TABLE mad_zero_matching AS
+SELECT *
+FROM ts_mad_detect(ARRAY[1.0, 1.0, 1.0, 1.0]::float8[], 3);
+
+CREATE TEMP TABLE mad_zero_different AS
+SELECT *
+FROM ts_mad_detect(ARRAY[1.0, 1.0, 1.0, 2.0]::float8[], 3);
+
+DO $$
+BEGIN
+    IF (SELECT (mad, score, is_outlier)
+        FROM mad_zero_matching WHERE index = 3)
+        IS DISTINCT FROM (ROW(0.0::double precision, 0.0::double precision, false))
+    THEN
+        RAISE EXCEPTION 'matching zero-MAD row did not return score zero and false';
+    END IF;
+
+    IF (SELECT (mad, score, is_outlier)
+        FROM mad_zero_different WHERE index = 3)
+        IS DISTINCT FROM (ROW(0.0::double precision, NULL::double precision, true))
+    THEN
+        RAISE EXCEPTION 'different zero-MAD row did not return NULL score and true';
+    END IF;
+END
+$$;
+
+CREATE TEMP TABLE mad_timestamp_source AS
+SELECT
+    timestamp '2026-01-01 00:00:00 UTC' + (sample * interval '15 minutes') AS bucket,
+    value
+FROM unnest(ARRAY[1.0, 2.0, 3.0, 4.0, 100.0]::float8[])
+    WITH ORDINALITY AS samples(value, ordinal)
+CROSS JOIN LATERAL (SELECT (samples.ordinal - 1)::integer AS sample) AS positions;
+
+CREATE TEMP TABLE mad_timestamp_mapping AS
+SELECT
+    source.bucket,
+    detected.index,
+    detected.is_outlier
+FROM mad_timestamp_source AS source
+JOIN ts_mad_detect(
+    ARRAY(SELECT value FROM mad_timestamp_source ORDER BY bucket),
+    4
+) AS detected ON detected.index = (
+    SELECT count(*)::integer
+    FROM mad_timestamp_source AS prior
+    WHERE prior.bucket < source.bucket
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM mad_timestamp_mapping
+        WHERE bucket = timestamp '2026-01-01 01:00:00 UTC'
+          AND index = 4
+          AND is_outlier
+    ) THEN
+        RAISE EXCEPTION 'rolling MAD timestamp mapping did not preserve sample index';
+    END IF;
+END
+$$;
+
+CREATE TEMP TABLE mad_remainder AS
+SELECT *
+FROM ts_mad_detect(
+    ARRAY(SELECT remainder FROM decomposition_multiple ORDER BY index),
+    96,
+    3.5,
+    24
+);
+
+DO $$
+BEGIN
+    IF (SELECT count(*) FROM mad_remainder) <> 2880
+        OR (SELECT min(index) FROM mad_remainder) <> 0
+        OR (SELECT max(index) FROM mad_remainder) <> 2879
+        OR (SELECT count(*) FROM mad_remainder WHERE is_ready) <> 2856 THEN
+        RAISE EXCEPTION 'MSTL remainder rolling MAD shape or warm-up is incorrect';
+    END IF;
+END
+$$;
+
+DO $$
+DECLARE
+    error_message text;
+BEGIN
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[]::float8[], 4);
+        RAISE EXCEPTION 'empty rolling MAD values should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0, NULL]::float8[], 4);
+        RAISE EXCEPTION 'NULL rolling MAD values should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY['NaN'::float8, 1.0]::float8[], 4);
+        RAISE EXCEPTION 'non-finite rolling MAD values should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0]::float8[], 0);
+        RAISE EXCEPTION 'non-positive rolling MAD window should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0]::float8[], 1, 0.0);
+        RAISE EXCEPTION 'non-positive rolling MAD threshold should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0]::float8[], 1, 'NaN'::float8);
+        RAISE EXCEPTION 'non-finite rolling MAD threshold should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0]::float8[], 1, 3.5, 0);
+        RAISE EXCEPTION 'non-positive rolling MAD minimum sample count should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+
+    BEGIN
+        PERFORM ts_mad_detect(ARRAY[1.0]::float8[], 1, 3.5, 2);
+        RAISE EXCEPTION 'too-large rolling MAD minimum sample count should be rejected';
+    EXCEPTION
+        WHEN others THEN
+            error_message := SQLERRM;
+            IF error_message NOT LIKE 'invalid ts_mad_detect input:%' THEN
+                RAISE;
+            END IF;
+    END;
+END
+$$;
