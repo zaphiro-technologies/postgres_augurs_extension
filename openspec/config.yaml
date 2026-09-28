@@ -1,8 +1,8 @@
 schema: spec-driven
 
 context: |
-      We use dockerised environments and github actions.
-      Domain: energy grid monitoring platform.
+  We use dockerised environments and github actions.
+  Domain: energy grid monitoring platform.
 
 rules:
   proposal:
