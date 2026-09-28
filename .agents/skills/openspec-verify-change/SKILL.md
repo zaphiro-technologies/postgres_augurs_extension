@@ -1,6 +1,9 @@
 ---
 name: openspec-verify-change
-description: Verify implementation matches change artifacts. Use when the user wants to validate that implementation is complete, correct, and coherent before archiving.
+description:
+  Verify implementation matches change artifacts. Use when the user wants to
+  validate that implementation is complete, correct, and coherent before
+  archiving.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
@@ -10,11 +13,25 @@ metadata:
   generatedBy: "1.13.0"
 ---
 
-Verify that an implementation matches the change artifacts (specs, tasks, design).
+Verify that an implementation matches the change artifacts (specs, tasks,
+design).
 
-**Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
+**Store selection:** If the user names a store (a store is a standalone OpenSpec
+repo registered on this machine) or the work lives in one, run
+`openspec store list --json` to discover registered store ids, then pass
+`--store <id>` on the commands that read or write specs and changes
+(`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`,
+`doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as
+sticky for the rest of the workflow. Every unscoped example of those commands
+below is shorthand: before running it, append the flag. For example, run
+`openspec status --change "<name>" --json --store "<id>"`, not the unscoped form
+shown below. Other commands do not take the flag. Hints printed by commands
+already carry the flag; keep it on follow-ups. Without a store, commands act on
+the nearest local `openspec/` root.
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be
+inferred from conversation context. If vague or ambiguous you MUST prompt for
+available changes.
 
 **Steps**
 
@@ -23,21 +40,26 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    If a name is provided, use it. Otherwise:
    - Infer from conversation context if the user mentioned a change
    - Auto-select if only one active change exists
-   - If ambiguous, run `openspec list --json` to get available changes and ask the user to select one
+   - If ambiguous, run `openspec list --json` to get available changes and ask
+     the user to select one
 
-   When prompting, show changes that have implementation tasks (tasks artifact exists).
-   Include the schema used for each change if available.
-   Mark changes with incomplete tasks as "(In Progress)".
+   When prompting, show changes that have implementation tasks (tasks artifact
+   exists). Include the schema used for each change if available. Mark changes
+   with incomplete tasks as "(In Progress)".
 
-   Always announce: "Using change: <name>" and how to override (e.g., `$openspec-verify-change (Codex) or /openspec-verify-change (other agents) <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g.,
+   `$openspec-verify-change (Codex) or /openspec-verify-change (other agents) <other>`).
 
 2. **Check status to understand the schema**
+
    ```bash
    openspec status --change "<name>" --json
    ```
+
    Parse the JSON to understand:
    - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context
+   - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path
+     and scope context
    - Which artifacts exist for this change
 
 3. **Get planning context and load artifacts**
@@ -46,7 +68,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    openspec instructions apply --change "<name>" --json
    ```
 
-   This returns the change directory and `contextFiles` (artifact ID -> array of concrete file paths). Read all available artifacts from `contextFiles`.
+   This returns the change directory and `contextFiles` (artifact ID -> array of
+   concrete file paths). Read all available artifacts from `contextFiles`.
 
 4. **Initialize verification report structure**
 
@@ -65,7 +88,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - Count complete vs total tasks
    - If incomplete tasks exist:
      - Add CRITICAL issue for each incomplete task
-     - Recommendation: "Complete task: <description>" or "Mark as done if already implemented"
+     - Recommendation: "Complete task: <description>" or "Mark as done if
+       already implemented"
 
    **Spec Coverage**:
    - If delta specs exist in `contextFiles.specs`:
@@ -94,18 +118,22 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      - Check if tests exist covering the scenario
      - If scenario appears uncovered:
        - Add WARNING: "Scenario not covered: <scenario name>"
-       - Recommendation: "Add test or implementation for scenario: <description>"
+       - Recommendation: "Add test or implementation for scenario:
+         <description>"
 
 7. **Verify Coherence**
 
    **Design Adherence**:
    - If `contextFiles.design` exists:
-     - Extract key decisions (look for sections like "Decision:", "Approach:", "Architecture:")
+     - Extract key decisions (look for sections like "Decision:", "Approach:",
+       "Architecture:")
      - Verify implementation follows those decisions
      - If contradiction detected:
        - Add WARNING: "Design decision not followed: <decision>"
-       - Recommendation: "Update implementation or revise design.md to match reality"
-   - If no design.md: Skip design adherence check, note "No design.md to verify against"
+       - Recommendation: "Update implementation or revise design.md to match
+         reality"
+   - If no design.md: Skip design adherence check, note "No design.md to verify
+     against"
 
    **Code Pattern Consistency**:
    - Review new code for consistency with project patterns
@@ -117,15 +145,17 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 8. **Generate Verification Report**
 
    **Summary Scorecard**:
+
    ```markdown
    ## Verification Report: <change-name>
 
    ### Summary
-   | Dimension    | Status           |
-   |--------------|------------------|
-   | Completeness | X/Y tasks, N reqs|
-   | Correctness  | M/N reqs covered |
-   | Coherence    | Followed/Issues  |
+
+   | Dimension    | Status            |
+   | ------------ | ----------------- |
+   | Completeness | X/Y tasks, N reqs |
+   | Correctness  | M/N reqs covered  |
+   | Coherence    | Followed/Issues   |
    ```
 
    **Issues by Priority**:
@@ -147,16 +177,21 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **Final Assessment**:
    - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
-   - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
+   - If only warnings: "No critical issues. Y warning(s) to consider. Ready for
+     archive (with noted improvements)."
    - If all clear: "All checks passed. Ready for archive."
 
 **Verification Heuristics**
 
-- **Completeness**: Focus on objective checklist items (checkboxes, requirements list)
-- **Correctness**: Use keyword search, file path analysis, reasonable inference - don't require perfect certainty
+- **Completeness**: Focus on objective checklist items (checkboxes, requirements
+  list)
+- **Correctness**: Use keyword search, file path analysis, reasonable
+  inference - don't require perfect certainty
 - **Coherence**: Look for glaring inconsistencies, don't nitpick style
-- **False Positives**: When uncertain, prefer SUGGESTION over WARNING, WARNING over CRITICAL
-- **Actionability**: Every issue must have a specific recommendation with file/line references where applicable
+- **False Positives**: When uncertain, prefer SUGGESTION over WARNING, WARNING
+  over CRITICAL
+- **Actionability**: Every issue must have a specific recommendation with
+  file/line references where applicable
 
 **Graceful Degradation**
 
@@ -168,6 +203,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 **Output Format**
 
 Use clear markdown with:
+
 - Table for summary scorecard
 - Grouped lists for issues (CRITICAL/WARNING/SUGGESTION)
 - Code references in format: `file.ts:123`
