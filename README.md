@@ -614,6 +614,8 @@ The script builds `postgres-augurs-extension:poc`, starts an isolated
 PostgreSQL container, installs the extension, and executes `sql/poc.sql`. The
 smoke test covers forecasting, keyed fit/predict reuse, seasonality detection,
 decomposition, reconstruction, nullable bounds, and invalid-input behavior.
+The SQL fixtures are mounted read-only for this test and are not included in
+the production image.
 
 ## CI and PostgreSQL packages
 

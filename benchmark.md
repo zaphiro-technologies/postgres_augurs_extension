@@ -168,3 +168,38 @@ table-valued function call, including consuming all output rows.
 `request_avg_ms` includes SQL array construction plus client and connection
 overhead. CPU is sampled from the PostgreSQL Docker container and is sensitive
 to the short workload duration and container-runtime scheduling.
+
+## Rolling MAD detection
+
+The rolling-MAD benchmark was executed on 2026-09-27 with the Dockerized
+PostgreSQL 17 environment and three repeated detections per history size:
+
+```bash
+SKIP_BUILD=1 ITERATIONS=3 bash scripts/benchmark-rolling-mad.sh
+```
+
+The workload uses `ts_mad_detect` with `window_size = 96`, `threshold = 3.5`,
+and `min_samples = 24`. It generates a deterministic daily-shaped signal with
+one isolated spike, consumes every returned row, and checks that every run
+returns the requested row count. Extension installation, PostgreSQL startup,
+and SQL setup are performed once before the measured workloads and excluded
+from the per-request timings. The image used PostgreSQL 17 on
+`postgres:17-bookworm`, extension version `0.1.0`, Augurs `0.10.2`, Rust
+`1.88.0`, and cargo-pgrx `0.16.1`.
+
+| History observations | Iterations | Total elapsed (s) | Request avg (ms) | Rolling MAD avg (ms) | Average CPU (%) | Peak CPU (%) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2,880 | 3 | 0.06 | 20.00 | 11.397 | 38.19 | 38.19 |
+| 8,640 | 3 | 0.12 | 40.00 | 37.416 | 0.14 | 0.14 |
+| 43,200 | 3 | 0.32 | 106.67 | 172.402 | 0.12 | 0.12 |
+
+`rolling_mad_avg_ms` is measured inside PostgreSQL around the complete
+table-valued call and row consumption. `request_avg_ms` includes SQL array
+construction, the client, and connection overhead. CPU is sampled from the
+PostgreSQL Docker container; these short runs make CPU samples sensitive to
+sampling boundaries. The correctness-first implementation sorts each trailing
+window, so its cost is linear in history length for the fixed 96-sample window.
+At the tested sizes it remained below 200 ms in-query, so a sliding median
+structure is not justified by this baseline alone; larger windows, higher
+concurrency, or stricter latency budgets should trigger a new benchmark before
+changing the data structure.

@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-    docker build --tag "${image_name}" "${repo_root}"
+    docker build --file "${repo_root}/.docker/Dockerfile" --tag "${image_name}" "${repo_root}"
 fi
 
 docker run --detach \

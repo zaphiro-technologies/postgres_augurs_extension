@@ -1,0 +1,10 @@
+name: Clean up temporary storage
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  clean-up-storage:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/clean-up-storage.yaml@main
+    secrets: inherit

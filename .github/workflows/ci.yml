@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Build pinned PostgreSQL toolchain
-        run: docker build --target toolchain --tag "${PACKAGE_IMAGE}" .
+        run: docker build --file .docker/Dockerfile --target toolchain --tag "${PACKAGE_IMAGE}" .
 
       - name: Run formatting, tests, and linting
         run: >-

@@ -26,6 +26,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker build \
+    --file "${repo_root}/.docker/Dockerfile" \
     --target package \
     --tag "${image_name}" \
     "${repo_root}"

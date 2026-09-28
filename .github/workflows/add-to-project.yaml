@@ -1,0 +1,15 @@
+name: Project Management
+on:
+  issues:
+    types:
+      - labeled
+  pull_request:
+    branches: ["main"]
+    types:
+      - labeled
+      - ready_for_review
+  workflow_dispatch:
+jobs:
+  add-to-project:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/add-to-project.yaml@main
+    secrets: inherit

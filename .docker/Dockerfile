@@ -36,8 +36,6 @@ RUN rm -rf /workspace/package \
         --pg-config /usr/lib/postgresql/17/bin/pg_config \
         --out-dir /workspace/package
 
-FROM package AS runtime
+FROM timescale/timescaledb-ha:pg17.11-ts2.30.0 AS runtime
 
-RUN cargo pgrx install --pg-config /usr/lib/postgresql/17/bin/pg_config
-
-COPY sql ./sql
+COPY --from=package /workspace/package/ /
