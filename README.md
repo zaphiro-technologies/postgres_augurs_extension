@@ -1,13 +1,13 @@
 # PostgreSQL Augurs Extension
 
 A proof of concept for running [Augurs](https://github.com/grafana/augurs)
-time-series operations directly inside PostgreSQL. The extension accepts
-ordered `float8[]` histories and returns forecast or analysis rows; it does not
-query application tables or persist results.
+time-series operations directly inside PostgreSQL. The extension accepts ordered
+`float8[]` histories and returns forecast or analysis rows; it does not query
+application tables or persist results.
 
-The current implementation is pinned to Augurs `0.10.2`.
-This extension currently enables Augurs' `ets`, `mstl`, `seasons`, `outliers` and
-`changepoint` capabilities.
+The current implementation is pinned to Augurs `0.10.2`. This extension
+currently enables Augurs' `ets`, `mstl`, `seasons`, `outliers` and `changepoint`
+capabilities.
 
 ## Why put time-series analytics in PostgreSQL?
 
@@ -19,8 +19,8 @@ execution boundary for advanced time-series operations:
   pass it directly to an analytics function without a second data-extraction
   pipeline.
 - Forecasts, decompositions, detected periods, and changepoint indexes can be
-  joined back to the source rows in the same query, preserving traceability
-  from an analytical result to the original measurement window.
+  joined back to the source rows in the same query, preserving traceability from
+  an analytical result to the original measurement window.
 - The database remains the integration point for permissions, transactions,
   query scheduling, and downstream dashboard or service access; this extension
   does not introduce a parallel persistence system.
@@ -36,8 +36,8 @@ The functions are intended as building blocks for scenarios such as:
   selected by a dashboard or operational query;
 - detecting likely seasonal periods before configuring a daily or weekly
   forecast;
-- decomposing a measurement into trend, seasonal components, and remainder so
-  a service can compare actual behavior with an expected baseline;
+- decomposing a measurement into trend, seasonal components, and remainder so a
+  service can compare actual behavior with an expected baseline;
 - identifying regime changes in loading, voltage, calibration, or feeder
   behavior with changepoint indexes; and
 - fitting one model and serving repeated predictions for the same series in a
@@ -47,12 +47,15 @@ The functions are intended as building blocks for scenarios such as:
 
 The PostgreSQL functions are thin adapters around selected Augurs capabilities:
 
-- forecasting and decomposition use [MSTL](https://docs.rs/augurs/0.10.2/augurs/mstl/index.html)
-  with [ETS](https://docs.rs/augurs/0.10.2/augurs/ets/index.html) for the trend
+- forecasting and decomposition use
+  [MSTL](https://docs.rs/augurs/0.10.2/augurs/mstl/index.html) with
+  [ETS](https://docs.rs/augurs/0.10.2/augurs/ets/index.html) for the trend
   model;
-- period discovery uses the [seasonality detector](https://docs.rs/augurs/0.10.2/augurs/seasons/index.html);
+- period discovery uses the
+  [seasonality detector](https://docs.rs/augurs/0.10.2/augurs/seasons/index.html);
   and
-- regime-change detection uses [Augurs changepoint detection](https://docs.rs/augurs/0.10.2/augurs/changepoint/index.html).
+- regime-change detection uses
+  [Augurs changepoint detection](https://docs.rs/augurs/0.10.2/augurs/changepoint/index.html).
 
 The adapter owns PostgreSQL input validation, row shape, defaults, and index
 alignment. Augurs owns the numerical model semantics within the pinned release.
@@ -78,11 +81,11 @@ RETURNS integer[]
 Delegates to Augurs' native `PeriodogramDetector` and returns detected periods
 as numbers of samples. Omitted options preserve Augurs' native defaults.
 
-The input must already be ordered and regularly sampled. The extension does
-not query timestamps, infer the sampling interval, resample, interpolate, or
-round native periodogram estimates to canonical periods. A sufficiently long
-synthetic 15-minute history currently produces native candidates such as `97`
-and `682`, approximately one day (`96`) and one week (`672`).
+The input must already be ordered and regularly sampled. The extension does not
+query timestamps, infer the sampling interval, resample, interpolate, or round
+native periodogram estimates to canonical periods. A sufficiently long synthetic
+15-minute history currently produces native candidates such as `97` and `682`,
+approximately one day (`96`) and one week (`672`).
 
 #### Scenario
 
@@ -127,14 +130,14 @@ RETURNS TABLE (
 
 Delegates to Augurs' native default ARGPCP detector and returns zero-based
 sample indexes. Index `0` is always included as the start of the input; every
-other returned index identifies the sample immediately before a detected
-regime change. A returned index is a changepoint, not an anomaly score or an
-anomalous observation.
+other returned index identifies the sample immediately before a detected regime
+change. A returned index is a changepoint, not an anomaly score or an anomalous
+observation.
 
 The input must already be ordered and regularly sampled. The caller owns the
 mapping from sample indexes to timestamps; the extension does not query
-timestamps, resample, interpolate, detect anomalies, or persist detector
-state. The detector is stateless and domain-neutral.
+timestamps, resample, interpolate, detect anomalies, or persist detector state.
+The detector is stateless and domain-neutral.
 
 #### Example
 
@@ -159,8 +162,8 @@ WHERE changes.index > 0
 ORDER BY changes.index;
 ```
 
-The function rejects empty histories, histories shorter than four samples,
-NULL elements, and non-finite values without returning partial output.
+The function rejects empty histories, histories shorter than four samples, NULL
+elements, and non-finite values without returning partial output.
 
 ### `ts_mad_detect`
 
@@ -193,20 +196,20 @@ RETURNS TABLE (
 ```
 
 Returns exactly one zero-based row for each input array position. For position
-`i`, the baseline is the preceding `window_size` samples, ending at `i - 1`;
-the current value is never included. The baseline median and median absolute
-deviation use conventional midpoint medians for even sample counts. Bounds
-use the robust scale factor `1.4826`, and `is_outlier` is true only when the
-score is strictly greater than `threshold`.
+`i`, the baseline is the preceding `window_size` samples, ending at `i - 1`; the
+current value is never included. The baseline median and median absolute
+deviation use conventional midpoint medians for even sample counts. Bounds use
+the robust scale factor `1.4826`, and `is_outlier` is true only when the score
+is strictly greater than `threshold`.
 
 `min_samples` defaults to `window_size` and must be between `1` and
 `window_size`. Before that many preceding samples are available, the row has
 `is_ready = false` and NULL statistical fields and outlier flag. A matching
-zero-MAD value has a zero score and `is_outlier = false`; a different value
-has NULL score and `is_outlier = true`, with both bounds equal to the median.
+zero-MAD value has a zero score and `is_outlier = false`; a different value has
+NULL score and `is_outlier = true`, with both bounds equal to the median.
 
-The input must be a non-empty, finite, NULL-free, already ordered history.
-The function does not query timestamps, resample, interpolate, reorder, persist
+The input must be a non-empty, finite, NULL-free, already ordered history. The
+function does not query timestamps, resample, interpolate, reorder, persist
 state, generate events, detect seasonality or changepoints, compare peers, or
 implement Grafana-specific behavior. Map `index` back to timestamps in the
 calling query:
@@ -232,8 +235,8 @@ JOIN detected AS d USING (index)
 ORDER BY s.bucket;
 ```
 
-The same function can consume an MSTL `remainder` array when the caller wants
-to score deviations after removing the modeled trend and seasonal components.
+The same function can consume an MSTL `remainder` array when the caller wants to
+score deviations after removing the modeled trend and seasonal components.
 
 ### `augurs_mstl_decompose`
 
@@ -257,11 +260,11 @@ result is stateless and uses the native decomposition without additional
 rounding:
 
 - `index` is zero-based and matches the input array position.
-- `seasonal[1]` corresponds to `periods[1]`, `seasonal[2]` to `periods[2]`,
-  and so on.
+- `seasonal[1]` corresponds to `periods[1]`, `seasonal[2]` to `periods[2]`, and
+  so on.
 - Periods are sample counts, not time intervals.
-- The caller is responsible for ordering the history and joining the result
-  back to timestamps.
+- The caller is responsible for ordering the history and joining the result back
+  to timestamps.
 
 The native decomposition uses `f32` internally; the returned components are
 converted to PostgreSQL `float8` values. The extension does not add an
@@ -369,14 +372,14 @@ RETURNS TABLE (
 
 Fits a keyed MSTL model and stores it in a bounded, process-local cache. A fit
 is reused only when the `series_key`, values, and periods all match. A new fit
-for an existing key replaces that key after fitting succeeds. The cache holds
-up to four fitted models and is not durable storage.
+for an existing key replaces that key after fitting succeeds. The cache holds up
+to four fitted models and is not durable storage.
 
 #### Scenario
 
-Use this when a series will receive multiple predictions with different
-horizons or confidence levels. Keep the fit and subsequent predictions in the
-same PostgreSQL backend session so the process-local cache is available.
+Use this when a series will receive multiple predictions with different horizons
+or confidence levels. Keep the fit and subsequent predictions in the same
+PostgreSQL backend session so the process-local cache is available.
 
 #### Example
 
@@ -422,8 +425,8 @@ NULL `level` returns point forecasts without bounds.
 #### Scenario
 
 Use this after `augurs_mstl_fit` when the same fitted model must serve repeated
-forecast requests. The function errors if the keyed model is not present in
-the current process.
+forecast requests. The function errors if the keyed model is not present in the
+current process.
 
 #### Example
 
@@ -455,10 +458,9 @@ RETURNS TABLE (
 )
 ```
 
-Runs the same cold fit-and-predict sequence as
-`augurs_mstl_forecast`, while exposing separate fit and predict timings, total
-model time, and the forecast row count. It does not populate the keyed cache or
-persist a fitted model.
+Runs the same cold fit-and-predict sequence as `augurs_mstl_forecast`, while
+exposing separate fit and predict timings, total model time, and the forecast
+row count. It does not populate the keyed cache or persist a fitted model.
 
 #### Scenario
 
@@ -486,9 +488,9 @@ FROM augurs_mstl_benchmark(
 
 ### Detect periods, then decompose
 
-Detection and decomposition can be composed directly in SQL. The query keeps
-the source sample index so the zero-based decomposition rows can be joined
-back to their timestamps:
+Detection and decomposition can be composed directly in SQL. The query keeps the
+source sample index so the zero-based decomposition rows can be joined back to
+their timestamps:
 
 ```sql
 WITH series AS (
@@ -524,9 +526,8 @@ JOIN decomposition AS d ON d.index = s.sample_index
 ORDER BY s.bucket;
 ```
 
-When needed, derive the expected value in the query as the trend plus the sum
-of all seasonal components. The extension leaves that interpretation to the
-caller.
+When needed, derive the expected value in the query as the trend plus the sum of
+all seasonal components. The extension leaves that interpretation to the caller.
 
 ### Fit once, predict repeatedly
 
@@ -552,10 +553,10 @@ FROM augurs_mstl_predict('transformer:T1:loading:15m', 96, 0.95);
 
 ## Development workflow with OpenSpec
 
-This repository uses the spec-driven [OpenSpec](https://github.com/Fission-AI/OpenSpec)
-workflow so that an analytics API is agreed before it becomes PostgreSQL
-surface area. The repository rules and required evidence live in
-[`openspec/config.yaml`](openspec/config.yaml).
+This repository uses the spec-driven
+[OpenSpec](https://github.com/Fission-AI/OpenSpec) workflow so that an analytics
+API is agreed before it becomes PostgreSQL surface area. The repository rules
+and required evidence live in [`openspec/config.yaml`](openspec/config.yaml).
 
 For a behavior or API change:
 
@@ -581,8 +582,8 @@ For a behavior or API change:
    behavior changes. Re-run validation and review the generated PostgreSQL
    signature before marking the change complete.
 8. Archive a completed change only after its tasks and required evidence are
-   complete. Archived changes provide the history for subsequent proposals;
-   they are not a substitute for current implementation or benchmark checks.
+   complete. Archived changes provide the history for subsequent proposals; they
+   are not a substitute for current implementation or benchmark checks.
 
 ## Future evolution
 
@@ -590,8 +591,8 @@ The current extension is intentionally small. Possible next steps include:
 
 - **More Augurs capabilities.** Evaluate Augurs outlier detection, clustering,
   dynamic time warping, Prophet-compatible forecasting, and additional
-  diagnostics where the pinned release and PostgreSQL row/array model provide
-  a useful contract. Each addition should include a clear mapping from native
+  diagnostics where the pinned release and PostgreSQL row/array model provide a
+  useful contract. Each addition should include a clear mapping from native
   semantics to SQL semantics, validation, and a cost benchmark.
 - **Automatic model lifecycle management.** Introduce versioned model metadata,
   fit/retrain policies, freshness and drift checks, invalidation, retention,
@@ -610,12 +611,12 @@ Build the image and run the complete SQL smoke test:
 bash scripts/poc.sh
 ```
 
-The script builds `postgres-augurs-extension:poc`, starts an isolated
-PostgreSQL container, installs the extension, and executes `sql/poc.sql`. The
-smoke test covers forecasting, keyed fit/predict reuse, seasonality detection,
-decomposition, reconstruction, nullable bounds, and invalid-input behavior.
-The SQL fixtures are mounted read-only for this test and are not included in
-the production image.
+The script builds `postgres-augurs-extension:poc`, starts an isolated PostgreSQL
+container, installs the extension, and executes `sql/poc.sql`. The smoke test
+covers forecasting, keyed fit/predict reuse, seasonality detection,
+decomposition, reconstruction, nullable bounds, and invalid-input behavior. The
+SQL fixtures are mounted read-only for this test and are not included in the
+production image.
 
 ## CI and PostgreSQL packages
 
@@ -649,9 +650,9 @@ the filesystem root:
 sudo tar -xzf postgres_augurs_extension-pg17-0.1.0-local.tar.gz -C /
 ```
 
-The GitHub Actions package is a short-lived CI artifact; this workflow does
-not publish a GitHub Release or claim compatibility with PostgreSQL versions
-other than the version used to build the package.
+The GitHub Actions package is a short-lived CI artifact; this workflow does not
+publish a GitHub Release or claim compatibility with PostgreSQL versions other
+than the version used to build the package.
 
 ## Benchmarks
 
@@ -662,9 +663,9 @@ five forecast iterations per size:
 bash scripts/benchmark.sh
 ```
 
-For this benchmark, `batch_size` is the number of historical observations
-passed to one forecast call. The default sizes are `1344`, `2016`, `2880`, and
-`5760`. The minimum default size is two cycles of the longest configured period
+For this benchmark, `batch_size` is the number of historical observations passed
+to one forecast call. The default sizes are `1344`, `2016`, `2880`, and `5760`.
+The minimum default size is two cycles of the longest configured period
 (`2 * 672`); smaller histories are rejected by Augurs for this model.
 
 The output reports total elapsed time, average time per forecast, and average
@@ -680,8 +681,8 @@ Customize the workload with environment variables:
 BATCH_SIZES='1344 2880 5760' ITERATIONS=10 bash scripts/benchmark.sh
 ```
 
-Use `SKIP_BUILD=1` when the `postgres-augurs-extension:poc` image already
-exists locally:
+Use `SKIP_BUILD=1` when the `postgres-augurs-extension:poc` image already exists
+locally:
 
 ```bash
 SKIP_BUILD=1 BATCH_SIZES='1344 2880' ITERATIONS=3 bash scripts/benchmark.sh
@@ -697,11 +698,11 @@ SKIP_BUILD=1 KEYED_ITERATIONS=100 bash scripts/benchmark-keyed.sh
 ```
 
 The seasonality and decomposition benchmarks measure in-query function time,
-request time, and sampled PostgreSQL container CPU. The keyed benchmark fits
-one model per history size and measures repeated `augurs_mstl_predict` calls in
-the same session. Setup, fixture creation, extension installation, and the
-keyed warm-up fit are kept separate from the repeated operation being measured
-where applicable.
+request time, and sampled PostgreSQL container CPU. The keyed benchmark fits one
+model per history size and measures repeated `augurs_mstl_predict` calls in the
+same session. Setup, fixture creation, extension installation, and the keyed
+warm-up fit are kept separate from the repeated operation being measured where
+applicable.
 
 The latest recorded results and their interpretation are in
 [benchmark.md](benchmark.md).
