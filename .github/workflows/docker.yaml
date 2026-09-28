@@ -1,0 +1,30 @@
+name: Docker Build
+
+on:
+  pull_request:
+    branches:
+      - "main"
+    types:
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+  push:
+    branches:
+      - "main"
+    tags:
+      - "*.*.*"
+      - "*.*"
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+jobs:
+  docker-build:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/docker.yaml@main
+    secrets: inherit
+    with:
+      docker-file: .docker/Dockerfile
+      go-cache: true

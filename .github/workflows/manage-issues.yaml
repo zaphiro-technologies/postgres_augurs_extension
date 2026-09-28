@@ -1,0 +1,9 @@
+name: Manage Issues and PRs
+on:
+  schedule:
+    - cron: "15 3 * * *"
+  workflow_dispatch:
+jobs:
+  manage-issues:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/manage-issues.yaml@main
+    secrets: inherit

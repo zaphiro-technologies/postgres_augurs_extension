@@ -1,0 +1,22 @@
+[package]
+name = "postgres_augurs_extension"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "pgrx_embed_postgres_augurs_extension"
+path = "src/bin/pgrx_embed.rs"
+
+[features]
+default = ["pg17"]
+pg17 = ["pgrx/pg17"]
+pg_test = []
+
+[dependencies]
+augurs = { version = "=0.10.2", default-features = false, features = ["changepoint", "ets", "mstl", "seasons"] }
+pgrx = { version = "=0.16.1", default-features = false }

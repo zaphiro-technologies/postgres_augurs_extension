@@ -1,0 +1,12 @@
+name: Markdown Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  markdown-checker:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/markdown.yaml@main
+    secrets: inherit

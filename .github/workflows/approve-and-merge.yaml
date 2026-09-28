@@ -1,0 +1,11 @@
+name: Auto-approve & auto-merge Dependabot PRs
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  approve-and-merge:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/approve-and-merge.yaml@main
+    secrets: inherit

@@ -1,0 +1,124 @@
+{
+    "categories": [
+      {
+        "title": "## Features",
+        "labels": ["feature"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Bug Fixes",
+        "labels": ["bug"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Continuous Integration",
+        "labels": ["ci"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Security",
+        "labels": ["security"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Documentation",
+        "labels": ["documentation"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Dependencies",
+        "labels": ["dependencies"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      },
+      {
+        "title": "## Refactoring",
+        "labels": ["refactor"],
+        "rules": [
+          {
+            "pattern": "myPR",
+            "on_property": "number"
+          },
+          {
+            "pattern": "merged",
+            "on_property": "status"
+          }
+        ],
+        "exhaustive": true,
+        "exhaustive_rules": false
+      }
+    ],
+    "pr_template": "- ${{TITLE}} (PR #${{NUMBER}} by @${{AUTHOR}})",
+    "ignore_labels": [
+      "skip-changelog"
+    ],
+    "sort": {
+      "order": "DESC",
+      "on_property": "mergedAt"
+    }
+}

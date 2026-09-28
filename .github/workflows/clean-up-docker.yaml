@@ -1,0 +1,13 @@
+name: Cleanup on PR closure
+
+permissions:
+  packages: write
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  clean-up-docker:
+    uses: zaphiro-technologies/github-workflows/.github/workflows/clean-up-docker.yaml@main
+    secrets: inherit
